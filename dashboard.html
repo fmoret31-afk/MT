@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📊 Dashboard de Registros</title>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f7fb;
+            margin: 20px;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: auto;
+        }
+        h1 {
+            color: #1a73e8;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .tarjetas {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .tarjeta {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .tarjeta h3 {
+            margin: 0;
+            color: #555;
+            font-size: 14px;
+        }
+        .tarjeta .numero {
+            font-size: 36px;
+            font-weight: bold;
+            color: #1a73e8;
+            margin: 10px 0;
+        }
+        .graficos {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 30px;
+        }
+        .grafico-card {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .grafico-card h3 {
+            text-align: center;
+            margin-bottom: 15px;
+            color: #333;
+        }
+        canvas {
+            max-height: 300px;
+            max-width: 100%;
+        }
+        .error {
+            color: red;
+            text-align: center;
+            font-weight: bold;
+        }
+        .actualizar {
+            display: block;
+            margin: 20px auto;
+            padding: 10px 30px;
+            background: #1a73e8;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .actualizar:hover {
+            background: #1557b0;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            color: #888;
+            font-size: 14px;
+        }
+        @media (max-width: 600px) {
+            .graficos {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Dashboard de Registros</h1>
+        <div id="estado-carga">⏳ Cargando datos...</div>
+
+        <!-- Tarjetas de resumen -->
+        <div class="tarjetas" id="tarjetas" style="display:none;">
+            <div class="tarjeta">
+                <h3>👤 Total Personas</h3>
+                <div class="numero" id="totalPersonas">0</div>
+            </div>
+            <div class="tarjeta">
+                <h3>📈 Promedio Calificación</h3>
+                <div class="numero" id="promedioCalif">0</div>
+            </div>
+            <div class="tarjeta">
+                <h3>🏢 Empresas distintas</h3>
+                <div class="numero" id="totalEmpresas">0</div>
+            </div>
+            <div class="tarjeta">
+                <h3>📚 Cursos distintos</h3>
+                <div class="numero" id="totalCursos">0</div>
+            </div>
+        </div>
+
+        <!-- Botón para recargar -->
+        <button class="actualizar" id="btnActualizar">🔄 Actualizar Datos</button>
+
+        <!-- Gráficos -->
+        <div class="graficos" id="graficos" style="display:none;">
+            <div class="grafico-card">
+                <h3>📊 Distribución por Curso</h3>
+                <canvas id="chartCursos"></canvas>
+            </div>
+            <div class="grafico-card">
+                <h3>🏢 Distribución por Empresa</h3>
+                <canvas id="chartEmpresas"></canvas>
+            </div>
+            <div class="grafico-card">
+                <h3>📈 Calificaciones (histograma)</h3>
+                <canvas id="chartCalif"></canvas>
+            </div>
+        </div>
+        <div class="footer">Datos actualizados en tiempo real desde Google Sheets</div>
+    </div>
+
+    <script>
+        // ============================================================
+        // CONFIGURACIÓN - CAMBIA ESTA URL POR LA DE TU APP SCRIPT
+        // ============================================================
+        const URL_SCRIPT = 'https://script.google.com/macros/s/AKfycbxJ4uuWDHFCy99EhRa7v8FthfNruLsw3u0zIPaV-edmzXuQa7jPrfhTsx1Kx8q9Bj4/exec'; 
+        // 👆 Reemplaza TU_URL_AQUI con la URL de tu Apps Script (la que copiaste al implementar)
+
+        // ============================================================
+        // FUNCIÓN PARA OBTENER DATOS Y ACTUALIZAR DASHBOARD
+        // ============================================================
+        async function cargarDashboard() {
+            const estado = document.getElementById('estado-carga');
+            const tarjetasDiv = document.getElementById('tarjetas');
+            const graficosDiv = document.getElementById('graficos');
+
+            estado.textContent = '⏳ Cargando datos...';
+            estado.className = '';
+            tarjetasDiv.style.display = 'none';
+            graficosDiv.style.display = 'none';
+
+            try {
+                // Hacer GET a Apps Script con action=getData
+                const url = `${URL_SCRIPT}?action=getData`;
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error('Error al obtener datos: ' + response.status);
+                }
+                const datos = await response.json();
+
+                // Si hay error en la respuesta (ej: error de Apps Script)
+                if (datos.error) {
+                    throw new Error(datos.error);
+                }
+
+                // Si no hay datos
+                if (!datos || datos.length === 0) {
+                    estado.textContent = '📭 No hay datos registrados aún.';
+                    estado.className = 'error';
+                    return;
+                }
+
+                // --- Procesar datos para estadísticas ---
+                // datos es un array de objetos con propiedades: NOMBRE, DNI, CURSO, EMPRESA, CALIFICACIÓN
+                const nombres = datos.map(d => d.NOMBRE).filter(Boolean);
+                const calificaciones = datos.map(d => parseFloat(d.CALIFICACION)).filter(n => !isNaN(n));
+                const cursos = datos.map(d => d.CURSO).filter(Boolean);
+                const empresas = datos.map(d => d.EMPRESA).filter(Boolean);
+
+                const totalPersonas = nombres.length;
+                const promedioCalif = calificaciones.length ? (calificaciones.reduce((a,b) => a+b, 0) / calificaciones.length).toFixed(2) : 'N/A';
+                const totalEmpresas = new Set(empresas).size;
+                const totalCursos = new Set(cursos).size;
+
+                // Actualizar tarjetas
+                document.getElementById('totalPersonas').textContent = totalPersonas;
+                document.getElementById('promedioCalif').textContent = promedioCalif;
+                document.getElementById('totalEmpresas').textContent = totalEmpresas;
+                document.getElementById('totalCursos').textContent = totalCursos;
+
+                // Mostrar tarjetas
+                tarjetasDiv.style.display = 'grid';
+
+                // --- Preparar datos para gráficos ---
+                // Distribución de cursos
+                const conteoCursos = {};
+                cursos.forEach(c => { conteoCursos[c] = (conteoCursos[c] || 0) + 1; });
+                const labelsCursos = Object.keys(conteoCursos);
+                const dataCursos = Object.values(conteoCursos);
+
+                // Distribución de empresas
+                const conteoEmpresas = {};
+                empresas.forEach(e => { conteoEmpresas[e] = (conteoEmpresas[e] || 0) + 1; });
+                const labelsEmpresas = Object.keys(conteoEmpresas);
+                const dataEmpresas = Object.values(conteoEmpresas);
+
+                // Histograma de calificaciones (rangos: 0-5, 5-7, 7-9, 9-10)
+                const rangos = { '0-5': 0, '5-7': 0, '7-9': 0, '9-10': 0 };
+                calificaciones.forEach(nota => {
+                    if (nota < 5) rangos['0-5']++;
+                    else if (nota < 7) rangos['5-7']++;
+                    else if (nota < 9) rangos['7-9']++;
+                    else rangos['9-10']++;
+                });
+                const labelsRangos = Object.keys(rangos);
+                const dataRangos = Object.values(rangos);
+
+                // Mostrar gráficos
+                graficosDiv.style.display = 'grid';
+
+                // --- Dibujar gráficos con Chart.js ---
+                // Destruir gráficos anteriores si existen
+                if (window.chartCursos) window.chartCursos.destroy();
+                if (window.chartEmpresas) window.chartEmpresas.destroy();
+                if (window.chartCalif) window.chartCalif.destroy();
+
+                // Gráfico de Cursos (Barras)
+                const ctxCursos = document.getElementById('chartCursos').getContext('2d');
+                window.chartCursos = new Chart(ctxCursos, {
+                    type: 'bar',
+                    data: {
+                        labels: labelsCursos,
+                        datasets: [{
+                            label: 'Cantidad de personas',
+                            data: dataCursos,
+                            backgroundColor: 'rgba(26, 115, 232, 0.7)',
+                            borderColor: 'rgba(26, 115, 232, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: { display: false }
+                        }
+                    }
+                });
+
+                // Gráfico de Empresas (Pastel)
+                const ctxEmpresas = document.getElementById('chartEmpresas').getContext('2d');
+                const colores = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40'];
+                window.chartEmpresas = new Chart(ctxEmpresas, {
+                    type: 'pie',
+                    data: {
+                        labels: labelsEmpresas,
+                        datasets: [{
+                            data: dataEmpresas,
+                            backgroundColor: colores.slice(0, labelsEmpresas.length),
+                        }]
+                    },
+                    options: {
+                        responsive: true
+                    }
+                });
+
+                // Histograma de Calificaciones (Barras)
+                const ctxCalif = document.getElementById('chartCalif').getContext('2d');
+                window.chartCalif = new Chart(ctxCalif, {
+                    type: 'bar',
+                    data: {
+                        labels: labelsRangos,
+                        datasets: [{
+                            label: 'Personas',
+                            data: dataRangos,
+                            backgroundColor: 'rgba(255, 99, 132, 0.7)',
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: { display: false }
+                        }
+                    }
+                });
+
+                // Ocultar mensaje de carga
+                estado.textContent = '✅ Datos cargados correctamente.';
+                estado.className = '';
+
+            } catch (error) {
+                estado.textContent = '❌ Error: ' + error.message;
+                estado.className = 'error';
+                console.error(error);
+            }
+        }
+
+        // ============================================================
+        // CARGAR AL INICIAR Y CON BOTÓN DE ACTUALIZAR
+        // ============================================================
+        document.addEventListener('DOMContentLoaded', cargarDashboard);
+        document.getElementById('btnActualizar').addEventListener('click', cargarDashboard);
+    </script>
+</body>
+</html>
